@@ -11,8 +11,10 @@
   "description": "",
   "dependencies": {
     "@azure/cognitiveservices-computervision": "^8.2.0",
+    "@azure/core-auth": "^1.9.0",
     "@azure/cosmos": "^4.4.1",
-    "@azure/openai": "^2.0.0",
+    "@azure/ms-rest-js": "^2.7.0",
+    "@azure/openai": "^1.0.0-beta.11",
     "dotenv": "^16.5.0",
     "restify": "^11.1.0"
   }
