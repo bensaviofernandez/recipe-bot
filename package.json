@@ -1,0 +1,19 @@
+{
+  "name": "recipe-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@azure/cognitiveservices-computervision": "^8.2.0",
+    "@azure/cosmos": "^4.4.1",
+    "@azure/openai": "^2.0.0",
+    "dotenv": "^16.5.0",
+    "restify": "^11.1.0"
+  }
+}

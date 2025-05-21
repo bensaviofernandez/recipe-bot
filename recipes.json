@@ -1,0 +1,22 @@
+[
+  {
+    "id": 1,
+    "name": "Tomato Basil Pasta",
+    "ingredients": ["tomato", "basil", "garlic", "olive oil", "pasta"],
+    "cook_time": 20,
+    "difficulty": "easy",
+    "instructions": "1. Boil pasta per packet instructions.\n2. Sauté garlic in olive oil…\n3. Add chopped tomatoes and basil…\n4. Toss with pasta and serve.",
+    "tags": ["vegetarian", "under-30-min"],
+    "image_url": "https://example.com/images/tomato-basil-pasta.jpg"
+  },
+  {
+    "id": 2,
+    "name": "Chicken Stir Fry",
+    "ingredients": ["chicken", "soy sauce", "broccoli", "carrot", "garlic"],
+    "cook_time": 25,
+    "difficulty": "easy",
+    "instructions": "1. Marinate chicken in soy sauce…\n2. Stir-fry garlic, veggies, then chicken…\n3. Serve with rice.",
+    "tags": ["meat", "under-30-min"],
+    "image_url": "https://example.com/images/chicken-stir-fry.jpg"
+  }
+]
