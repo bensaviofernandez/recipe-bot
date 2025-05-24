@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quick Recipe Recommender UI</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 2rem auto; }
+    h1, h2 { text-align: center; }
+    section { margin-bottom: 2rem; }
+    input { width: 80%; padding: 0.5rem; margin-right: 0.5rem; }
+    button { padding: 0.5rem 1rem; }
+    .result { background: #f4f4f4; padding: 1rem; border-radius: 4px; margin-top: 0.5rem; }
+    .recommendation { font-weight: bold; margin-top: 1rem; }
+    ul { list-style-type: disc; padding-left: 1.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Quick Recipe Recommender</h1>
+
+  <section id="image-section">
+    <h2>Image-based Recommendation</h2>
+    <input type="text" id="imageUrl" placeholder="Enter image URL or GitHub blob URL" />
+    <button id="imageSubmit">Get Recipe</button>
+    <div id="imageResult" class="result">Detected: <span id="imageDetected"></span></div>
+    <ul id="imageSuggestions"></ul>
+    <div id="imageRecommendation" class="recommendation"></div>
+  </section>
+
+  <section id="text-section">
+    <h2>Text-based Recommendation</h2>
+    <input type="text" id="ingredients" placeholder="Enter comma-separated ingredients" />
+    <button id="textSubmit">Get Recipe</button>
+    <div id="textResult" class="result">Ingredients: <span id="textDetected"></span></div>
+    <ul id="textSuggestions"></ul>
+    <div id="textRecommendation" class="recommendation"></div>
+  </section>
+
+  <script>
+    function normalizeGitHubUrl(u) {
+      const match = u.match(/^https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/blob\/([^\/]+)\/(.+)$/);
+      return match ? `https://raw.githubusercontent.com/${match[1]}/${match[2]}/${match[3]}/${match[4]}` : u;
+    }
+
+    async function postJson(path, body) {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      return res.json();
+    }
+
+    // Common function to render numbered paragraphs
+    function renderNumbered(containerId, text) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = '';
+      const items = text.split(/\r?\n+/).filter(line => line.trim());
+      items.forEach((line, idx) => {
+        // If line starts with a number and dot, remove it
+        const content = line.replace(/^\d+\.\s*/, '').trim();
+        const p = document.createElement('p');
+        p.textContent = `${idx + 1}. ${content}`;
+        container.appendChild(p);
+      });
+    }
+
+    // Image-based route
+    document.getElementById('imageSubmit').addEventListener('click', async () => {
+      const rawUrl = document.getElementById('imageUrl').value.trim();
+      const url = normalizeGitHubUrl(rawUrl);
+      if (!/\.(jpe?g|png|gif)$/i.test(url)) {
+        document.getElementById('imageRecommendation').textContent =
+          'Error: Provide a direct image link ending in .jpg, .jpeg, .png, or .gif.';
+        return;
+      }
+      // Clear previous
+      document.getElementById('imageDetected').textContent = '';
+      document.getElementById('imageSuggestions').innerHTML = '';
+      document.getElementById('imageRecommendation').textContent = 'Loading...';
+
+      const data = await postJson('/recommend', { imageUrl: url });
+      document.getElementById('imageDetected').textContent = data.detected.join(', ');
+
+      const sugList = document.getElementById('imageSuggestions');
+      data.suggestions.forEach(r => {
+        const li = document.createElement('li');
+        li.textContent = `${r.name} (${r.cook_time} min)`;
+        sugList.appendChild(li);
+      });
+
+      renderNumbered('imageRecommendation', data.recommendation);
+    });
+
+    // Text-based route
+    document.getElementById('textSubmit').addEventListener('click', async () => {
+      const ingredients = document.getElementById('ingredients').value
+        .split(',').map(i => i.trim()).filter(Boolean);
+      if (!ingredients.length) {
+        document.getElementById('textRecommendation').textContent = 'Error: Enter at least one ingredient.';
+        return;
+      }
+      // Clear previous
+      document.getElementById('textDetected').textContent = '';
+      document.getElementById('textSuggestions').innerHTML = '';
+      document.getElementById('textRecommendation').textContent = 'Loading...';
+
+      const data = await postJson('/recommend-text', { ingredients });
+      document.getElementById('textDetected').textContent = data.ingredients.join(', ');
+
+      const sugList = document.getElementById('textSuggestions');
+      data.suggestions.forEach(r => {
+        const li = document.createElement('li');
+        li.textContent = `${r.name} (${r.cook_time} min)`;
+        sugList.appendChild(li);
+      });
+
+      renderNumbered('textRecommendation', data.recommendation);
+    });
+  </script>
+</body>
+</html>
