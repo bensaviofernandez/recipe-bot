@@ -1,19 +1,55 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Quick Recipe Recommender UI</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 600px; margin: 2rem auto; }
-    h1, h2 { text-align: center; }
-    section { margin-bottom: 2rem; }
-    input { width: 80%; padding: 0.5rem; margin-right: 0.5rem; }
-    button { padding: 0.5rem 1rem; }
-    .result { background: #f4f4f4; padding: 1rem; border-radius: 4px; margin-top: 0.5rem; }
-    .recommendation { font-weight: bold; margin-top: 1rem; }
-    ul { list-style-type: disc; padding-left: 1.5rem; }
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 2rem auto;
+      line-height: 1.5;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+    section {
+      margin-bottom: 2rem;
+      border: 1px solid #ddd;
+      padding: 1rem;
+      border-radius: 6px;
+    }
+    section h2 {
+      margin-top: 0;
+    }
+    input {
+      width: 70%;
+      padding: 0.5rem;
+      margin-right: 0.5rem;
+    }
+    button {
+      padding: 0.5rem 1rem;
+    }
+    .results {
+      margin-top: 1rem;
+    }
+    .ingredients {
+      font-weight: bold;
+      margin-bottom: 0.5rem;
+    }
+    .recipe {
+      margin-bottom: 1rem;
+    }
+    .recipe h3 {
+      margin: 0.5rem 0 0.25rem;
+    }
+    .error {
+      color: #a00;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -21,26 +57,28 @@
 
   <section id="image-section">
     <h2>Image-based Recommendation</h2>
-    <input type="text" id="imageUrl" placeholder="Enter image URL or GitHub blob URL" />
-    <button id="imageSubmit">Get Recipe</button>
-    <div id="imageResult" class="result">Detected: <span id="imageDetected"></span></div>
-    <ul id="imageSuggestions"></ul>
-    <div id="imageRecommendation" class="recommendation"></div>
+    <input type="text" id="imageUrl" placeholder="Enter image URL" />
+    <button id="imageSubmit">Get Recipes</button>
+    <div id="imageResult" class="results"></div>
   </section>
 
   <section id="text-section">
     <h2>Text-based Recommendation</h2>
     <input type="text" id="ingredients" placeholder="Enter comma-separated ingredients" />
-    <button id="textSubmit">Get Recipe</button>
-    <div id="textResult" class="result">Ingredients: <span id="textDetected"></span></div>
-    <ul id="textSuggestions"></ul>
-    <div id="textRecommendation" class="recommendation"></div>
+    <button id="textSubmit">Get Recipes</button>
+    <div id="textResult" class="results"></div>
   </section>
 
   <script>
     function normalizeGitHubUrl(u) {
-      const match = u.match(/^https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/blob\/([^\/]+)\/(.+)$/);
-      return match ? `https://raw.githubusercontent.com/${match[1]}/${match[2]}/${match[3]}/${match[4]}` : u;
+      const m = u.match(
+        /^https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/blob\/([^\/]+)\/(.+)$/
+      );
+      if (m) {
+        const [, user, repo, branch, path] = m;
+        return `https://raw.githubusercontent.com/${user}/${repo}/${branch}/${path}`;
+      }
+      return u;
     }
 
     async function postJson(path, body) {
@@ -52,72 +90,85 @@
       return res.json();
     }
 
-    // Common function to render numbered paragraphs
-    function renderNumbered(containerId, text) {
-      const container = document.getElementById(containerId);
-      container.innerHTML = '';
-      const items = text.split(/\r?\n+/).filter(line => line.trim());
-      items.forEach((line, idx) => {
-        // If line starts with a number and dot, remove it
-        const content = line.replace(/^\d+\.\s*/, '').trim();
+    function renderResult(container, data, [key0, key1, key2]) {
+        container.innerHTML = '';
+        if (data.error) {
+        container.innerHTML = `<div class="error">${data.error}</div>`;
+        return;
+        }
+
+        // 1) Detected ingredients
+        const ing = Array.isArray(data[key0]) ? data[key0].join(', ') : '';
+        container.innerHTML = `<div class="ingredients">Detected: ${ing}</div>`;
+
+        const recipes  = data[key1] || [];
+        const textBlock = (data[key2] || '').trim();
+
+        // 2) Try splitting into one entry per recipe
+        let lines = textBlock.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+
+        // If LLM gave it all on one line, split on numbering: “1.” “2.” …
+        if (lines.length === 1 && recipes.length > 1) {
+        lines = textBlock.split(/\d+\.\s*/).map(l => l.trim()).filter(l => l);
+        }
+
+        // If still one chunk, split on sentences
+        if (lines.length === 1 && recipes.length > 1) {
+        lines = textBlock.split(/(?<=\.)\s+/).map(l => l.trim()).filter(l => l);
+        }
+
+        // 3) Render each recipe
+        recipes.forEach((r, idx) => {
+        const div = document.createElement('div');
+        div.className = 'recipe';
+
+        const h3 = document.createElement('h3');
+        h3.textContent = `${idx+1}. ${r.name} (${r.cook_time} min)`;
+
         const p = document.createElement('p');
-        p.textContent = `${idx + 1}. ${content}`;
+        // pick the matching line, or fallback to the entire block
+        const raw = lines[idx] || textBlock;
+        // strip any leading bullets/numbers
+        p.textContent = raw.replace(/^[-\d\.\s]*/, '');
+
+        div.appendChild(h3);
+        div.appendChild(p);
+        container.appendChild(div);
+        });
+
+        // 4) If no recipes at all, just show the raw text
+        if (!recipes.length) {
+        const p = document.createElement('p');
+        p.textContent = textBlock;
         container.appendChild(p);
-      });
+        }
     }
 
-    // Image-based route
-    document.getElementById('imageSubmit').addEventListener('click', async () => {
-      const rawUrl = document.getElementById('imageUrl').value.trim();
-      const url = normalizeGitHubUrl(rawUrl);
+    document.getElementById('imageSubmit').onclick = async () => {
+      const out = document.getElementById('imageResult');
+      out.textContent = 'Loading…';
+      let url = document.getElementById('imageUrl').value.trim();
+      url = normalizeGitHubUrl(url);
       if (!/\.(jpe?g|png|gif)$/i.test(url)) {
-        document.getElementById('imageRecommendation').textContent =
-          'Error: Provide a direct image link ending in .jpg, .jpeg, .png, or .gif.';
+        out.innerHTML = '<div class="error">Please enter a direct image URL (.jpg/.png/.gif).</div>';
         return;
       }
-      // Clear previous
-      document.getElementById('imageDetected').textContent = '';
-      document.getElementById('imageSuggestions').innerHTML = '';
-      document.getElementById('imageRecommendation').textContent = 'Loading...';
-
       const data = await postJson('/recommend', { imageUrl: url });
-      document.getElementById('imageDetected').textContent = data.detected.join(', ');
+      renderResult(out, data, ['detected', 'suggestions', 'recommendation']);
+    };
 
-      const sugList = document.getElementById('imageSuggestions');
-      data.suggestions.forEach(r => {
-        const li = document.createElement('li');
-        li.textContent = `${r.name} (${r.cook_time} min)`;
-        sugList.appendChild(li);
-      });
-
-      renderNumbered('imageRecommendation', data.recommendation);
-    });
-
-    // Text-based route
-    document.getElementById('textSubmit').addEventListener('click', async () => {
-      const ingredients = document.getElementById('ingredients').value
-        .split(',').map(i => i.trim()).filter(Boolean);
+    document.getElementById('textSubmit').onclick = async () => {
+      const out = document.getElementById('textResult');
+      out.textContent = 'Loading…';
+      const raw = document.getElementById('ingredients').value;
+      const ingredients = raw.split(',').map(i => i.trim()).filter(Boolean);
       if (!ingredients.length) {
-        document.getElementById('textRecommendation').textContent = 'Error: Enter at least one ingredient.';
+        out.innerHTML = '<div class="error">Please enter at least one ingredient.</div>';
         return;
       }
-      // Clear previous
-      document.getElementById('textDetected').textContent = '';
-      document.getElementById('textSuggestions').innerHTML = '';
-      document.getElementById('textRecommendation').textContent = 'Loading...';
-
       const data = await postJson('/recommend-text', { ingredients });
-      document.getElementById('textDetected').textContent = data.ingredients.join(', ');
-
-      const sugList = document.getElementById('textSuggestions');
-      data.suggestions.forEach(r => {
-        const li = document.createElement('li');
-        li.textContent = `${r.name} (${r.cook_time} min)`;
-        sugList.appendChild(li);
-      });
-
-      renderNumbered('textRecommendation', data.recommendation);
-    });
+      renderResult(out, data, ['ingredients', 'suggestions', 'recommendation']);
+    };
   </script>
 </body>
 </html>

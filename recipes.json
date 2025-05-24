@@ -1,6 +1,6 @@
 [
   {
-    "id": 1,
+    "id": "1",
     "name": "Tomato Basil Pasta",
     "ingredients": ["tomato", "basil", "garlic", "olive oil", "pasta"],
     "cook_time": 20,
@@ -10,7 +10,7 @@
     "image_url": "https://example.com/images/tomato-basil-pasta.jpg"
   },
   {
-    "id": 2,
+    "id": "2",
     "name": "Chicken Stir Fry",
     "ingredients": ["chicken", "soy sauce", "broccoli", "carrot", "garlic"],
     "cook_time": 25,
@@ -18,5 +18,86 @@
     "instructions": "1. Marinate chicken in soy sauce…\n2. Stir-fry garlic, veggies, then chicken…\n3. Serve with rice.",
     "tags": ["meat", "under-30-min"],
     "image_url": "https://example.com/images/chicken-stir-fry.jpg"
+  },
+  {
+    "id": "3",
+    "name": "Carrot Ginger Soup",
+    "ingredients": ["carrot", "ginger", "onion", "garlic", "vegetable broth"],
+    "cook_time": 30,
+    "difficulty": "easy",
+    "instructions": "1. Sauté chopped onion and garlic in a little oil until soft. 2. Add sliced carrots and grated ginger, cook 5 min. 3. Pour in broth, simmer 20 min. 4. Blend until smooth, season to taste.",
+    "tags": ["vegetarian", "soup", "under-30-min"],
+    "image_url": "https://example.com/images/carrot-ginger-soup.jpg"
+  },
+  {
+    "id": "4",
+    "name": "Onion Chicken Skillet",
+    "ingredients": ["chicken breast", "onion", "garlic", "olive oil", "thyme"],
+    "cook_time": 35,
+    "difficulty": "easy",
+    "instructions": "1. Season chicken, sear in skillet until golden. 2. Remove chicken; sauté sliced onion, garlic, and thyme. 3. Return chicken, add a splash of water, cover and cook 15 min. Serve.",
+    "tags": ["meat", "one-pan", "under-40-min"],
+    "image_url": "https://example.com/images/onion-chicken-skillet.jpg"
+  },
+  {
+    "id": "5",
+    "name": "Mushroom Omelette",
+    "ingredients": ["mushroom", "egg", "cheddar cheese", "butter", "salt"],
+    "cook_time": 15,
+    "difficulty": "easy",
+    "instructions": "1. Sauté sliced mushrooms in butter until golden. 2. Whisk eggs with salt, pour over mushrooms. 3. Sprinkle cheese, cook until set, fold and serve.",
+    "tags": ["vegetarian", "breakfast", "under-20-min"],
+    "image_url": "https://example.com/images/mushroom-omelette.jpg"
+  },
+  {
+    "id": "6",
+    "name": "Egg Salad",
+    "ingredients": ["egg", "mayonnaise", "mustard", "celery", "salt"],
+    "cook_time": 10,
+    "difficulty": "easy",
+    "instructions": "1. Hard-boil eggs, peel and chop. 2. Mix with mayo, mustard, diced celery, and salt. 3. Chill briefly and serve on bread or lettuce.",
+    "tags": ["vegetarian", "sandwich", "under-15-min"],
+    "image_url": "https://example.com/images/egg-salad.jpg"
+  },
+  {
+    "id": "7",
+    "name": "Broccoli Cheddar Soup",
+    "ingredients": ["broccoli", "cheddar cheese", "milk", "butter", "flour"],
+    "cook_time": 25,
+    "difficulty": "easy",
+    "instructions": "1. Melt butter, whisk in flour to make roux. 2. Gradually stir in milk. 3. Add chopped broccoli, simmer until tender. 4. Stir in cheese until melted, season to taste.",
+    "tags": ["vegetarian", "soup", "under-30-min"],
+    "image_url": "https://example.com/images/broccoli-cheddar-soup.jpg"
+  },
+  {
+    "id": "8",
+    "name": "Garlic Butter Shrimp",
+    "ingredients": ["shrimp", "garlic", "butter", "lemon", "parsley"],
+    "cook_time": 20,
+    "difficulty": "easy",
+    "instructions": "1. Melt butter, add minced garlic and cook 1 min. 2. Add shrimp, sauté until pink (3–4 min). 3. Squeeze lemon juice, toss with chopped parsley and serve.",
+    "tags": ["seafood", "under-30-min"],
+    "image_url": "https://example.com/images/garlic-butter-shrimp.jpg"
+  },
+  {
+    "id": "9",
+    "name": "Pepper Beef Stir Fry",
+    "ingredients": ["beef strips", "bell pepper", "soy sauce", "garlic", "onion"],
+    "cook_time": 20,
+    "difficulty": "easy",
+    "instructions": "1. Marinate beef strips in soy sauce and garlic for 10 min. 2. Stir-fry sliced onion and peppers until crisp-tender. 3. Add beef, cook until done and sauce is slightly reduced.",
+    "tags": ["meat", "under-25-min"],
+    "image_url": "https://example.com/images/pepper-beef-stir-fry.jpg"
+  },
+  {
+    "id": "10",
+    "name": "Tomato Pepper Salad",
+    "ingredients": ["tomato", "bell pepper", "onion", "olive oil", "basil"],
+    "cook_time": 10,
+    "difficulty": "easy",
+    "instructions": "1. Dice tomato, pepper, and onion. 2. Toss with olive oil and chopped basil. 3. Season with salt and serve chilled.",
+    "tags": ["vegetarian", "salad", "under-15-min", "no-cook"],
+    "image_url": "https://example.com/images/tomato-pepper-salad.jpg"
   }
+
 ]

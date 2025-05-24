@@ -1,130 +1,215 @@
 require('dotenv').config();
 const restify = require('restify');
+const path = require('path');
 
-// Azure SDK imports
 const { ComputerVisionClient } = require('@azure/cognitiveservices-computervision');
 const { ApiKeyCredentials } = require('@azure/ms-rest-js');
 const { OpenAIClient } = require('@azure/openai');
 const { AzureKeyCredential } = require('@azure/core-auth');
 const { CosmosClient } = require('@azure/cosmos');
 
-// Ingredient whitelist for filtering CV tags
 const INGREDIENT_WHITELIST = [
   'tomato', 'onion', 'carrot', 'broccoli', 'egg',
-  'chicken', 'mushroom', 'pepper', 'garlic'
+  'chicken', 'mushroom', 'pepper', 'garlic', 'cheese'
 ];
 
-// 1) Create and configure Azure clients
-console.log('Configuring Azure clients...');
-const cvClient = new ComputerVisionClient(
-  new ApiKeyCredentials({ inHeader: { 'Ocp-Apim-Subscription-Key': process.env.AZURE_CV_KEY }}),
-  process.env.AZURE_CV_ENDPOINT
-);
-console.log('Computer Vision client configured.');
+async function initAzure() {
+  console.log('Configuring Azure clients…');
 
-const openaiClient = new OpenAIClient(
-  process.env.AZURE_OPENAI_ENDPOINT,
-  new AzureKeyCredential(process.env.AZURE_OPENAI_KEY)
-);
-console.log('OpenAI client configured.');
+  const cvClient = new ComputerVisionClient(
+    new ApiKeyCredentials({ inHeader: { 'Ocp-Apim-Subscription-Key': process.env.AZURE_CV_KEY } }),
+    process.env.AZURE_CV_ENDPOINT
+  );
+  console.log('✔️ Computer Vision client ready');
 
-const cosmosClient = new CosmosClient({
-  endpoint: process.env.COSMOS_DB_ENDPOINT,
-  key: process.env.COSMOS_DB_KEY
-});
-const cosmosContainer = cosmosClient.database('RecipeDB').container('Recipes');
-console.log('Cosmos DB client configured.');
+  const openaiClient = new OpenAIClient(
+    process.env.AZURE_OPENAI_ENDPOINT,
+    new AzureKeyCredential(process.env.AZURE_OPENAI_KEY)
+  );
+  console.log('✔️ OpenAI client ready');
 
-// OpenAI deployment name
-const deploymentName = process.env.OPENAI_DEPLOYMENT_NAME || 'gpt-35-turbo';
-console.log(`Using OpenAI deployment: ${deploymentName}`);
+  const cosmos = new CosmosClient({
+    endpoint: process.env.COSMOS_DB_ENDPOINT,
+    key: process.env.COSMOS_DB_KEY
+  });
+  console.log('✔️ Cosmos client ready');
 
-// 2) Create the server
-console.log('Starting server setup...');
-const server = restify.createServer({ name: 'recipe-bot' });
-// 3) Parse JSON bodies
-server.use(restify.plugins.bodyParser());
+  const dbId = 'recipebot-db';
+  const containerId = 'recipe-DB';
 
-// 4) Health-check endpoint
-server.get('/', async (req, res) => {
-  console.log('Received GET /');
-  res.send({ message: 'Hello from Recipe Bot!' });
-});
+  const { database } = await cosmos.databases.createIfNotExists({ id: dbId });
+  console.log(`Database OK: ${database.id}`);
+  const { container } = await database.containers.createIfNotExists({
+    id: containerId,
+    partitionKey: { kind: 'Hash', paths: ['/id'] }
+  });
+  console.log(`Container OK: ${container.id}`);
 
-// 5) Recommendation endpoint
-server.post('/recommend', async (req, res) => {
-  console.log('Received POST /recommend');
-  try {
+  return { cvClient, openaiClient, cosmosContainer: container };
+}
+
+(async function main() {
+  const { cvClient, openaiClient, cosmosContainer } = await initAzure();
+  const deploymentName = process.env.OPENAI_DEPLOYMENT_NAME || 'gpt-35-turbo';
+  console.log(`Using OpenAI deployment: ${deploymentName}\n`);
+
+  const server = restify.createServer({ name: 'recipe-bot' });
+  server.use(restify.plugins.bodyParser());
+
+  // serve UI
+  server.get('/', restify.plugins.serveStatic({ directory: __dirname, file: 'index.html' }));
+  server.get('/images/*', restify.plugins.serveStatic({
+    directory: path.join(__dirname, 'images')
+  }));
+
+  // IMAGE-BASED RECOMMENDATION
+  server.post('/recommend', async (req, res) => {
+    console.log('[POST] /recommend', req.body);
     const { imageUrl } = req.body;
-    console.log('Request body:', req.body);
-    if (!imageUrl) {
-      console.error('No imageUrl provided');
-      return res.send(400, { error: 'Please include imageUrl in body.' });
+    if (!imageUrl) return res.send(400, { error: 'Missing imageUrl.' });
+
+    try {
+      // 1) tags + objects
+      console.log('→ analyzing image (tags + objects)');
+      const [tagRes, objRes] = await Promise.all([
+        cvClient.analyzeImage(imageUrl, { visualFeatures: ['Tags'] }),
+        cvClient.detectObjects(imageUrl)
+      ]);
+
+      const rawTags = tagRes.tags.map(t => t.name.toLowerCase());
+      const rawObjs = objRes.objects.map(o => o.object.toLowerCase());
+      let candidates = Array.from(new Set([...rawTags, ...rawObjs]));
+
+      // 2) filter by whitelist
+      let detected = candidates.filter(x => INGREDIENT_WHITELIST.includes(x));
+      console.log('→ detected (tags/objects):', detected);
+
+      // 3) fallback to captions if needed
+      if (detected.length === 0) {
+        console.log('→ no tags/objects, falling back to captions');
+        const captionRes = await cvClient.describeImage(imageUrl, { maxCandidates: 3 });
+        const captions = captionRes.captions.map(c => c.text.toLowerCase());
+        console.log('→ captions:', captions);
+
+        // split captions into words and filter
+        const words = captions.join(' ').split(/\W+/);
+        detected = Array.from(new Set(words))
+          .filter(w => INGREDIENT_WHITELIST.includes(w));
+        console.log('→ detected (captions):', detected);
+      }
+
+      if (!detected.length) {
+        return res.send({
+          detected,
+          suggestions: [],
+          recommendation: 'No recognizable ingredients detected.'
+        });
+      }
+
+      // 4) load all recipes
+      console.log('→ loading recipes');
+      const { resources: allRecipes } = await cosmosContainer.items.readAll().fetchAll();
+      console.log(`→ ${allRecipes.length} recipes total`);
+
+      // 5) match up to 2 ingredients
+      let matched = [];
+      detected.slice(0, 2).forEach(tag => {
+        const hits = allRecipes.filter(r =>
+          r.difficulty === 'easy' &&
+          Array.isArray(r.ingredients) &&
+          r.ingredients.includes(tag)
+        );
+        console.log(` • ${hits.length} hits for "${tag}"`);
+        matched.push(...hits);
+      });
+
+      // 6) dedupe & pick top 3
+      const suggestions = Array.from(
+        new Map(matched.map(r => [r.id, r])).values()
+      ).slice(0, 3);
+      console.log('→ suggestions:', suggestions.map(r => r.name));
+
+      // 7) prompt OpenAI
+      const listText = suggestions
+        .map(r => `- ${r.name} (${r.cook_time} min)`)
+        .join('\n');
+      const prompt = `
+Ingredients: ${detected.join(', ')}
+Easy recipes:
+${listText}
+Describe each in one sentence.
+`;
+      console.log('→ prompt:', prompt.trim());
+
+      const ai = await openaiClient.getChatCompletions(deploymentName, [
+        { role: 'system', content: 'You are a helpful cooking assistant.' },
+        { role: 'user', content: prompt }
+      ]);
+      const recommendation = ai.choices[0].message.content.trim();
+      console.log('→ LLM recommendation:\n', recommendation);
+
+      res.send({ detected, suggestions, recommendation });
+
+    } catch (err) {
+      console.error('❌ /recommend error:', err);
+      res.send(500, { error: err.message });
     }
+  });
 
-    // 5.1) Analyze image for tags
-    console.log(`Calling Computer Vision for URL: ${imageUrl}`);
-    const cvResult = await cvClient.analyzeImage(imageUrl, { visualFeatures: ['Tags'] });
-    const detectedRaw = cvResult.tags.map(t => t.name.toLowerCase());
-    console.log('Detected raw tags:', detectedRaw);
-
-    // Filter tags to only ingredients
-    const detected = detectedRaw.filter(tag => INGREDIENT_WHITELIST.includes(tag));
-    console.log('Filtered ingredient tags:', detected);
-
-    if (detected.length === 0) {
-      console.warn('No trusted ingredients detected');
-      return res.send(200, { detected: [], suggestions: [], recommendation: 'No recognizable ingredients detected. Please try another image.' });
+  // TEXT-BASED RECOMMENDATION (unchanged)
+  server.post('/recommend-text', async (req, res) => {
+    console.log('[POST] /recommend-text', req.body);
+    const { ingredients } = req.body;
+    if (!Array.isArray(ingredients) || !ingredients.length) {
+      return res.send(400, { error: 'Provide an ingredients array.' });
     }
+    try {
+      console.log('→ loading recipes');
+      const { resources: allRecipes } = await cosmosContainer.items.readAll().fetchAll();
+      console.log(`→ ${allRecipes.length} recipes total`);
 
-    // 5.2) Query Cosmos DB for recipes matching detected ingredients
-    console.log('Querying Cosmos DB for matching recipes...');
-    const easyRecipes = [];
-    const topTags = detected.slice(0, 2);
-    console.log('Top tags for search:', topTags);
-    for (let tag of topTags) {
-      const querySpec = {
-        query: 'SELECT * FROM c WHERE ARRAY_CONTAINS(c.ingredients, @tag) AND c.difficulty = @difficulty',
-        parameters: [
-          { name: '@tag', value: tag },
-          { name: '@difficulty', value: 'easy' }
-        ]
-      };
-      console.log(`Executing query for tag: ${tag}`);
-      const { resources: results } = await cosmosContainer.items.query(querySpec).fetchAll();
-      console.log(`Found ${results.length} recipes for tag "${tag}"`);
-      easyRecipes.push(...results);
+      let matched = [];
+      ingredients.slice(0, 2).forEach(tag => {
+        const hits = allRecipes.filter(r =>
+          r.difficulty === 'easy' &&
+          Array.isArray(r.ingredients) &&
+          r.ingredients.includes(tag)
+        );
+        console.log(` • ${hits.length} hits for "${tag}"`);
+        matched.push(...hits);
+      });
+
+      const suggestions = Array.from(
+        new Map(matched.map(r => [r.id, r])).values()
+      ).slice(0, 3);
+      console.log('→ suggestions:', suggestions.map(r => r.name));
+
+      const listText = suggestions
+        .map(r => `- ${r.name} (${r.cook_time} min)`)
+        .join('\n');
+      const prompt = `
+Ingredients: ${ingredients.join(', ')}
+Easy recipes:
+${listText}
+Describe each in one sentence.
+`;
+      console.log('→ prompt:', prompt.trim());
+
+      const ai = await openaiClient.getChatCompletions(deploymentName, [
+        { role: 'system', content: 'You are a helpful cooking assistant.' },
+        { role: 'user', content: prompt }
+      ]);
+      const recommendation = ai.choices[0].message.content.trim();
+      console.log('→ LLM recommendation:\n', recommendation);
+
+      res.send({ ingredients, suggestions, recommendation });
+
+    } catch (err) {
+      console.error('❌ /recommend-text error:', err);
+      res.send(500, { error: err.message });
     }
-    // Deduplicate and pick top 3
-    const uniqueMap = new Map(easyRecipes.map(r => [r.id, r]));
-    const suggestions = Array.from(uniqueMap.values()).slice(0, 3);
-    console.log('Final suggestions:', suggestions.map(r => r.name));
+  });
 
-    // 5.3) Build prompt for OpenAI
-    const recipeListText = suggestions.map(r => `- ${r.name} (${r.cook_time} min)`).join('\n');
-    const prompt = `The user has ingredients: ${detected.join(', ')}. \"Easy\" recipes available:\n${recipeListText}\nPlease suggest up to 3 of these recipes with a one-sentence description each.`;
-    console.log('Constructed prompt:', prompt);
-
-    // Send to OpenAI
-    console.log('Sending to OpenAI...');
-    const aiResult = await openaiClient.getChatCompletions(deploymentName, [
-      { role: 'system', content: 'You are a helpful cooking assistant.' },
-      { role: 'user', content: prompt }
-    ]);
-    const recommendation = aiResult.choices[0].message.content.trim();
-    console.log('OpenAI recommendation:', recommendation);
-
-    // 5.4) Send final response
-    res.send({ detected, suggestions, recommendation });
-
-  } catch (err) {
-    console.error('Error in /recommend:', err);
-    res.send(500, { error: err.message || 'Something went wrong.' });
-  }
-});
-
-// 6) Start listening
-const port = process.env.PORT || 3978;
-server.listen(port, () => {
-  console.log(`Server listening at http://localhost:${port}`);
-});
+  const port = process.env.PORT || 3978;
+  server.listen(port, () => console.log(`Server listening at http://localhost:${port}`));
+})();
