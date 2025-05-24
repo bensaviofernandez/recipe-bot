@@ -90,6 +90,8 @@
       return res.json();
     }
 
+
+
     function renderResult(container, data, [key0, key1, key2]) {
         container.innerHTML = '';
         if (data.error) {
@@ -97,51 +99,89 @@
         return;
         }
 
-        // 1) Detected ingredients
-        const ing = Array.isArray(data[key0]) ? data[key0].join(', ') : '';
-        container.innerHTML = `<div class="ingredients">Detected: ${ing}</div>`;
+        // Detected ingredients
+        const detected = Array.isArray(data[key0]) ? data[key0].join(', ') : '';
+        container.innerHTML = `<div class="ingredients">Detected: ${detected}</div>`;
 
-        const recipes  = data[key1] || [];
-        const textBlock = (data[key2] || '').trim();
+        const suggestions = data[key1] || [];
+        const rawText    = (data[key2] || '').trim();
 
-        // 2) Try splitting into one entry per recipe
-        let lines = textBlock.split(/\r?\n/).map(l => l.trim()).filter(l => l);
-
-        // If LLM gave it all on one line, split on numbering: “1.” “2.” …
-        if (lines.length === 1 && recipes.length > 1) {
-        lines = textBlock.split(/\d+\.\s*/).map(l => l.trim()).filter(l => l);
-        }
-
-        // If still one chunk, split on sentences
-        if (lines.length === 1 && recipes.length > 1) {
-        lines = textBlock.split(/(?<=\.)\s+/).map(l => l.trim()).filter(l => l);
-        }
-
-        // 3) Render each recipe
-        recipes.forEach((r, idx) => {
+        // Helper to render one recipe block
+        function appendRecipe(title, desc) {
         const div = document.createElement('div');
         div.className = 'recipe';
-
         const h3 = document.createElement('h3');
-        h3.textContent = `${idx+1}. ${r.name} (${r.cook_time} min)`;
-
-        const p = document.createElement('p');
-        // pick the matching line, or fallback to the entire block
-        const raw = lines[idx] || textBlock;
-        // strip any leading bullets/numbers
-        p.textContent = raw.replace(/^[-\d\.\s]*/, '');
-
+        h3.textContent = title;
+        const p  = document.createElement('p');
+        p.textContent = desc.trim();
         div.appendChild(h3);
         div.appendChild(p);
         container.appendChild(div);
-        });
-
-        // 4) If no recipes at all, just show the raw text
-        if (!recipes.length) {
-        const p = document.createElement('p');
-        p.textContent = textBlock;
-        container.appendChild(p);
         }
+
+        // 1) If DB suggestions exist, slice by exact names
+        if (suggestions.length) {
+        const lower = rawText.toLowerCase();
+        suggestions.forEach((r, idx) => {
+            const name  = r.name;
+            const key   = name.toLowerCase() + ':';
+            const start = lower.indexOf(key);
+            let desc = '';
+            if (start >= 0) {
+            const from = start + key.length;
+            if (idx + 1 < suggestions.length) {
+                // stop before the next suggestion name
+                const nextKey = suggestions[idx+1].name.toLowerCase() + ':';
+                const end = lower.indexOf(nextKey, from);
+                desc = end >= 0
+                ? rawText.substring(from, end)
+                : rawText.substring(from);
+            } else {
+                desc = rawText.substring(from);
+            }
+            }
+            // fallback: entire rawText if nothing found
+            appendRecipe(
+            `${idx+1}. ${name} (${r.cook_time} min)`,
+            desc || rawText
+            );
+        });
+        return;
+        }
+
+        // 2) If no DB suggestions, but AI numbered list: split on digits + dot
+        let parts = rawText.split(/\d+\.\s*/).map(s => s.trim()).filter(s => s);
+        if (parts.length > 1) {
+        parts.forEach((chunk, i) => {
+            // chunk often is "Name: description"
+            const [namePart, ...rest] = chunk.split(':');
+            const desc = rest.join(':').trim();
+            appendRecipe(
+            `${i+1}. ${namePart.trim()}`,
+            desc || chunk
+            );
+        });
+        return;
+        }
+
+        // 3) If no numbered, but bullet list: split on dash
+        parts = rawText.split(/\r?\n?-\s*/).map(s => s.trim()).filter(s => s);
+        if (parts.length > 1) {
+        parts.forEach((chunk, i) => {
+            const [namePart, ...rest] = chunk.split(':');
+            const desc = rest.join(':').trim();
+            appendRecipe(
+            `• ${namePart.trim()}`,
+            desc || chunk
+            );
+        });
+        return;
+        }
+
+        // 4) Fallback: just render the whole text
+        const p = document.createElement('p');
+        p.textContent = rawText;
+        container.appendChild(p);
     }
 
     document.getElementById('imageSubmit').onclick = async () => {
